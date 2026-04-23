@@ -3,12 +3,12 @@
     {
       "sensorId": "0",
       "videoSetting": {
-        "name": "Video_10",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/10.webm",
+        "name": "Video_0",
+        "position": { "x": -595, "y": -190 },
+        "size": { "x": 1920, "y": 600 },
+        "rotation": { "x": 0, "y": 0, "z": -90 },
+        "scale": { "x": 0.5, "y": 0.5, "z": 0.5 },
+        "fileName": "Videos/마트료시카.webm",
         "volume": 1.0
       }
     },
@@ -16,23 +16,11 @@
       "sensorId": "1",
       "videoSetting": {
         "name": "Video_01",
-        "position": { "x": 0, "y": 0 },
+        "position": { "x": -470, "y": -70 },
         "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 0.5, "y": 0.5, "z": 0.5 },
-        "fileName": "Videos/1.webm",
-        "volume": 1.0
-      }
-    },
-    {
-      "sensorId": "2",
-      "videoSetting": {
-        "name": "Video_02",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/2.webm",
+        "rotation": { "x": 0, "y": 0, "z": 20 },
+        "scale": { "x": 0.4, "y": 0.4, "z": 0.4 },
+        "fileName": "Videos/자동차.webm",
         "volume": 1.0
       }
     },
@@ -40,11 +28,11 @@
       "sensorId": "3",
       "videoSetting": {
         "name": "Video_03",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "position": { "x": 570, "y": 170 },
+        "size": { "x": 900, "y": 600 },
+        "rotation": { "x": 0, "y": 0, "z": -45 },
         "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/3.webm",
+        "fileName": "Videos/빌딩.webm",
         "volume": 1.0
       }
     },
@@ -52,11 +40,11 @@
       "sensorId": "4",
       "videoSetting": {
         "name": "Video_04",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/4.webm",
+        "position": { "x": 740, "y": -140 },
+        "size": { "x": 1920, "y": 600 },
+        "rotation": { "x": 0, "y": 0, "z": 90 },
+        "scale": { "x": 0.5, "y": 0.5, "z": 0.5 },
+        "fileName": "Videos/마트료시카.webm",
         "volume": 1.0
       }
     },
@@ -64,11 +52,11 @@
       "sensorId": "5",
       "videoSetting": {
         "name": "Video_05",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/5.webm",
+        "position": { "x": 620, "y": 250 },
+        "size": { "x": 900, "y": 600 },
+        "rotation": { "x": 0, "y": 0, "z": 60 },
+        "scale": { "x": 0.6, "y": 0.6, "z": 0.6 },
+        "fileName": "Videos/생쥐.webm",
         "volume": 1.0
       }
     },
@@ -76,25 +64,37 @@
       "sensorId": "6",
       "videoSetting": {
         "name": "Video_06",
-        "position": { "x": 0, "y": 0 },
-        "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "position": { "x": -440, "y": 190 },
+        "size": { "x": 900, "y": 600 },
+        "rotation": { "x": 0, "y": 0, "z": -145 },
         "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/6.webm",
+        "fileName": "Videos/화분.webm",
         "volume": 1.0
       }
     },
     {
       "sensorId": "7",
       "videoSetting": {
-        "name": "Video_07",
-        "position": { "x": 0, "y": 0 },
+        "name": "Video_02",
+        "position": { "x": -100, "y": 0 },
         "size": { "x": 1920, "y": 1080 },
-        "rotation": { "x": 0, "y": 0, "z": 0 },
-        "scale": { "x": 1, "y": 1, "z": 1 },
-        "fileName": "Videos/7.webm",
+        "rotation": { "x": 0, "y": 0, "z": 210 },
+        "scale": { "x": 0.6, "y": 0.6, "z": 0.6 },
+        "fileName": "Videos/자동차.webm",
         "volume": 1.0
       }
-    }   
+    },
+    {
+      "sensorId": "8",
+      "videoSetting": {
+        "name": "Video_08",
+        "position": { "x": -10, "y": -140 },
+        "size": { "x": 800, "y": 800 },
+        "rotation": { "x": 0, "y": 0, "z": 0 },
+        "scale": { "x": 0.7, "y": 1, "z": 1 },
+        "fileName": "Videos/오뚜기.webm",
+        "volume": 1.0
+      }
+    }
   ]
 }

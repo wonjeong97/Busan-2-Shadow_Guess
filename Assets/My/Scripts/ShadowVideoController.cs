@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 using UnityEngine.Video;
 using Wonjeong.Data;
@@ -167,8 +168,8 @@ namespace My.Scripts
         }
 
         /// <summary>
-        /// 특정 비디오를 재생.
-        /// 동시 재생 한계를 관리하기 위해 시작 시 카운트를 올리고 종료 시 내림.
+        /// 특정 비디오를 재생합니다.
+        /// 렌더 텍스처에 남아있는 이전 재생 프레임 잔상을 숨기기 위해 재생 극초반부에 알파값을 제어합니다.
         /// </summary>
         /// <param name="data">재생할 비디오의 관리 데이터</param>
         private IEnumerator PlayVideoRoutine(VideoPlaybackData data)
@@ -176,6 +177,12 @@ namespace My.Scripts
             data.IsQueued = false;
             data.IsPreparing = true;
             activeVideoCount++;
+            
+            // 이전 잔상을 가리기 위해 준비 단계에서 투명도 0 적용
+            Color startColor;
+            startColor = data.Image.color;
+            startColor.a = 0f;
+            data.Image.color = startColor;
             
             data.VideoObject.SetActive(true);
             data.VideoObject.transform.SetAsLastSibling();
@@ -192,9 +199,31 @@ namespace My.Scripts
                 yield break;
             }
 
-            double clipLength = data.Player.length;
-            float maxDuration = clipLength > 0.1 ? (float)clipLength + 1.0f : 30f;
-            float timer = 0f;
+            // 새로운 첫 프레임이 디코딩되어 렌더 텍스처에 씌워질 때까지 대기
+            float renderWait;
+            renderWait = 0f;
+            
+            while (data.Player.frame <= 0 && renderWait < 0.5f)
+            {
+                renderWait += Time.deltaTime;
+                yield return null;
+            }
+            
+            // GPU 파이프라인 갱신 보장을 위한 추가 1프레임 지연
+            yield return null; 
+            
+            // 새 프레임 렌더링이 완료되었으므로 화면 출력 복구
+            startColor.a = 1f;
+            data.Image.color = startColor;
+
+            double clipLength;
+            clipLength = data.Player.length;
+            
+            float maxDuration;
+            maxDuration = clipLength > 0.1 ? (float)clipLength + 1.0f : 30f;
+            
+            float timer;
+            timer = 0f;
 
             while (data.Player.isPlaying && timer < maxDuration)
             {
@@ -240,10 +269,11 @@ namespace My.Scripts
 
         /// <summary>
         /// 매 프레임마다 디버그용 키보드 입력을 확인하여 비디오를 재생합니다.
-        /// 하드웨어 센서가 연결되지 않은 개발 및 테스트 환경에서 로직을 검증하기 위함입니다.
+        /// R키 입력 시 현재 씬을 다시 로드하여 비디오 설정(JSON)을 완전히 초기화하고 재적용합니다.
         /// </summary>
         private void Update()
         {
+            if (Input.GetKeyDown(KeyCode.Alpha0)) HandleSensorInput("0");
             if (Input.GetKeyDown(KeyCode.Alpha1)) HandleSensorInput("1");
             if (Input.GetKeyDown(KeyCode.Alpha2)) HandleSensorInput("2");
             if (Input.GetKeyDown(KeyCode.Alpha3)) HandleSensorInput("3");
@@ -251,7 +281,14 @@ namespace My.Scripts
             if (Input.GetKeyDown(KeyCode.Alpha5)) HandleSensorInput("5");
             if (Input.GetKeyDown(KeyCode.Alpha6)) HandleSensorInput("6");
             if (Input.GetKeyDown(KeyCode.Alpha7)) HandleSensorInput("7");
-            if (Input.GetKeyDown(KeyCode.Alpha0)) HandleSensorInput("0");
+
+            if (Input.GetKeyDown(KeyCode.R))
+            {
+                int currentSceneIndex;
+                
+                currentSceneIndex = SceneManager.GetActiveScene().buildIndex;
+                SceneManager.LoadScene(currentSceneIndex);
+            }
         }
         
         /// <summary>

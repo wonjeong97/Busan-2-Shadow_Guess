@@ -243,24 +243,34 @@ namespace My.Scripts
         }
 
         /// <summary>
-        /// 하드웨어 리셋 및 캘리브레이션을 진행하며, 보드의 명시적인 상태 응답을 기다립니다.
+        /// ESP32 하드웨어 리셋 및 캘리브레이션 요청을 보냅니다.
+        /// 응답 10초 대기 초과 시 현재 포트를 강제로 닫고 객체를 비워, 
+        /// 백그라운드 모니터링 루틴이 백지상태(전체 포트 재검색)에서 다시 시작하도록 유도합니다.
         /// </summary>
         private IEnumerator InitializeESP32Routine()
         {
-            // 이전에 버퍼에 쌓여있을 수 있는 Ready 텍스트 등을 지워 오작동을 방지합니다.
+            // 포트 개방 시 발생하는 DTR/RTS 하드웨어 리셋의 초기 부팅 완료("Ready")를 
+            // 소프트웨어 리셋("R") 응답으로 오인하는 문제를 막기 위해 2초간 대기합니다.
+            yield return new WaitForSeconds(2.0f);
+
+            // C# 일반 객체이므로 명시적 null 비교 수행
             if (connectedPort != null && connectedPort.IsOpen)
             {
+                // 대기하는 동안 쌓인 초기 부팅 로그(ESP32_Start, 가짜 Ready 등)를 완전히 비웁니다.
                 connectedPort.DiscardInBuffer();
             }
+            
             receiveBuffer = "";
             isBoardReady = false;
             isCalibrationDone = false;
 
-            Debug.Log("[ArduinoManager] 보드 리셋 요청 (R) 전송...");
+            Debug.Log("[ArduinoManager] 보드 리셋 요청 (R) 전송 시작");
             SendCommand("R");
             
-            float timer = 0f;
-            while (!isBoardReady && timer < 5.0f) // 최대 5초 대기
+            float timer;
+            timer = 0f;
+            
+            while (!isBoardReady && timer < 10.0f)
             {
                 timer += Time.deltaTime;
                 yield return null;
@@ -268,27 +278,33 @@ namespace My.Scripts
 
             if (!isBoardReady)
             {
-                Debug.LogError("[ArduinoManager] 보드 리셋 후 Ready 응답 대기 시간 초과.");
+                Debug.LogWarning("[ArduinoManager] 리셋 응답 10초 대기 초과. 연결을 초기화하고 백지상태에서 재검색합니다.");
+                if (connectedPort != null && connectedPort.IsOpen) connectedPort.Close();
+                connectedPort = null;
                 yield break;
             }
 
-            Debug.Log("[ArduinoManager] 센서 캘리브레이션 요청 (C) 전송...");
+            Debug.Log("[ArduinoManager] 보드 리셋 성공. 센서 캘리브레이션 요청 (C) 전송");
             SendCommand("C");
 
-            timer = 0f;
-            while (!isCalibrationDone && timer < 3.0f) // 최대 3초 대기
+            float calTimer;
+            calTimer = 0f;
+            
+            while (!isCalibrationDone && calTimer < 10.0f)
             {
-                timer += Time.deltaTime;
+                calTimer += Time.deltaTime;
                 yield return null;
             }
 
             if (!isCalibrationDone)
             {
-                Debug.LogError("[ArduinoManager] 캘리브레이션 Sensor_Ready 응답 대기 시간 초과.");
+                Debug.LogWarning("[ArduinoManager] 캘리브레이션 응답 10초 대기 초과. 연결을 초기화하고 백지상태에서 재검색합니다.");
+                if (connectedPort != null && connectedPort.IsOpen) connectedPort.Close();
+                connectedPort = null;
                 yield break;
             }
 
-            Debug.Log("[ArduinoManager] ESP32 초기화 및 캘리브레이션 최종 완료. 정상 동작 시작.");
+            Debug.Log("[ArduinoManager] ESP32 초기화 및 캘리브레이션 완료");
         }
         
         public void SendCommand(string command)
