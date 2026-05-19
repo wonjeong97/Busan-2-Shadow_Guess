@@ -222,6 +222,7 @@ MonoBehaviour:
   baudRate: 9600
   handshakeTimeout: 10
   reconnectInterval: 3
+  sensorTimeout: 20
 --- !u!4 &230498090
 Transform:
   m_ObjectHideFlags: 0

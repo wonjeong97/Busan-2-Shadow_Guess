@@ -18,7 +18,7 @@ namespace My.Scripts
     public class ArduinoManager : MonoBehaviour
     {
         public static ArduinoManager Instance { get; private set; }
-        
+
         [SerializeField] private int baudRate;
         [SerializeField] private float handshakeTimeout;
         [SerializeField] private float reconnectInterval;
@@ -27,16 +27,16 @@ namespace My.Scripts
         private SerialPort connectedPort;
         private Coroutine connectionCoroutine;
         private Coroutine resetCoroutine;
-        
+
         private string receiveBuffer;
         private bool isBoardReady;
         private bool isCalibrationDone;
-        
+
         private Dictionary<string, float> debounceMap;
         private Dictionary<string, float> activeSensorMap;
-        
+
         public event Action<string> OnDataReceived;
-        
+
         private void Awake()
         {
             if (Instance)
@@ -80,6 +80,7 @@ namespace My.Scripts
             {
                 StopCoroutine(connectionCoroutine);
             }
+
             connectionCoroutine = StartCoroutine(ConnectionMonitorRoutine());
         }
 
@@ -94,124 +95,116 @@ namespace My.Scripts
                 {
                     yield return StartCoroutine(FindAndConnectArduino());
                 }
-                
+
                 yield return wait;
             }
         }
-        
-       /// <summary>
-    /// 수신 버퍼 읽기 및 상태 파싱.
-    /// On/Off 상태를 추적하고 고착 감지 로직을 호출합니다.
-    /// </summary>
-    private void Update()
-    {
-        if (connectedPort == null || !connectedPort.IsOpen)
+
+        /// <summary>
+        /// 수신 버퍼 읽기 및 상태 파싱.
+        /// On/Off 상태를 추적하고 고착 감지 로직을 호출합니다.
+        /// </summary>
+        private void Update()
         {
-            return;
+            if (connectedPort == null || !connectedPort.IsOpen) return;
+
+            CheckSensorTimeout();
+
+            try
+            {
+                if (connectedPort.BytesToRead > 0)
+                {
+                    receiveBuffer += connectedPort.ReadExisting();
+
+                    // 줄바꿈 단위로 완전한 데이터만 처리
+                    int newLineIndex;
+                    while ((newLineIndex = receiveBuffer.IndexOf('\n')) != -1)
+                    {
+                        string line = receiveBuffer.Substring(0, newLineIndex).Trim();
+                        receiveBuffer = receiveBuffer.Substring(newLineIndex + 1);
+
+                        if (string.IsNullOrEmpty(line)) continue;
+
+                        ParseArduinoLine(line);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Debug.LogError($"[ArduinoManager] 시리얼 읽기 에러: {e.Message}");
+            }
         }
 
-        CheckSensorTimeout();
-
-        if (connectedPort.BytesToRead > 0)
-        {
-            receiveBuffer += connectedPort.ReadExisting();
-            int newLineIndex;
+        private void ParseArduinoLine(string line)
+        {   
+            Debug.Log($"[Arduino Data Received]: {line}");
             
-            while ((newLineIndex = receiveBuffer.IndexOf('\n')) != -1)
+            if (line == "Ready") isBoardReady = true;
+            else if (line == "Sensor_Ready") isCalibrationDone = true;
+            else if (line == "MPR121 not found") Debug.LogError("[ArduinoManager] 하드웨어 에러!");
+            else if (line.EndsWith("On")) HandleSensorInput(line, true);
+            else if (line.EndsWith("Off")) HandleSensorInput(line, false);
+        }
+
+        private void HandleSensorInput(string line, bool isOn)
+        {
+            string sensorId = line.Replace(isOn ? "On" : "Off", "").Trim();
+            float currentTime = Time.realtimeSinceStartup;
+
+            if (isOn)
             {
-                string line;
-                line = receiveBuffer.Substring(0, newLineIndex).Trim();
-                receiveBuffer = receiveBuffer.Substring(newLineIndex + 1);
-
-                if (!string.IsNullOrEmpty(line))
+                activeSensorMap[sensorId] = currentTime;
+                if (!debounceMap.TryGetValue(sensorId, out float lastTime) || currentTime - lastTime > 0.5f)
                 {
-                    if (line == "MPR121 not found")
-                    {
-                        Debug.LogError("[ArduinoManager] 하드웨어 에러: MPR121 터치 센서를 찾을 수 없습니다!");
-                    }
-                    else if (line == "Ready")
-                    {
-                        isBoardReady = true;
-                    }
-                    else if (line == "Sensor_Ready")
-                    {
-                        isCalibrationDone = true;
-                    }
-                    else if (line.EndsWith("On"))
-                    {
-                        string sensorId;
-                        sensorId = line.Replace("On", "").Trim();
-                        
-                        float currentTime;
-                        currentTime = Time.realtimeSinceStartup;
-                        
-                        if (activeSensorMap != null)
-                        {
-                            activeSensorMap[sensorId] = currentTime;
-                        }
-                        else
-                        {
-                            Debug.LogWarning("activeSensorMap이 null입니다. 할당 로직을 확인하세요.");
-                        }
+                    debounceMap[sensorId] = currentTime;
+                    OnDataReceived?.Invoke(sensorId);
+                }
+            }
+            else if (activeSensorMap.ContainsKey(sensorId))
+            {
+                activeSensorMap.Remove(sensorId);
+            }
+        }
 
-                        if (!debounceMap.TryGetValue(sensorId, out float lastTime) || currentTime - lastTime > 0.5f)
-                        {
-                            debounceMap[sensorId] = currentTime;
-                            OnDataReceived?.Invoke(sensorId);
-                        }
-                    }
-                    else if (line.EndsWith("Off"))
+        /// <summary>
+        /// 활성화된 센서들의 유지 시간을 검사합니다.
+        /// 임계치 초과 시 고착된 센서를 식별하고 기존 리셋 루틴을 취소 후 강제 리셋을 재실행합니다.
+        /// </summary>
+        private void CheckSensorTimeout()
+        {
+            if (activeSensorMap == null)
+            {
+                return;
+            }
+
+            float currentTime;
+            currentTime = Time.realtimeSinceStartup;
+
+            List<string> keys;
+            keys = new List<string>(activeSensorMap.Keys);
+
+            for (int i = 0; i < keys.Count; i++)
+            {
+                string key;
+                key = keys[i];
+
+                if (currentTime - activeSensorMap[key] > sensorTimeout)
+                {
+                    Debug.LogWarning(string.Format("[ArduinoManager] 센서 {0} 고착 감지. ESP32 강제 재부팅 및 캘리브레이션을 요청합니다.",
+                        key));
+
+                    activeSensorMap.Clear();
+
+                    if (resetCoroutine != null)
                     {
-                        string sensorId;
-                        sensorId = line.Replace("Off", "").Trim();
-                        
-                        if (activeSensorMap != null && activeSensorMap.ContainsKey(sensorId))
-                        {
-                            activeSensorMap.Remove(sensorId);
-                        }
+                        StopCoroutine(resetCoroutine);
                     }
+
+                    resetCoroutine = StartCoroutine(InitializeESP32Routine());
+                    break;
                 }
             }
         }
-    }
-       
-    /// <summary>
-    /// 활성화된 센서들의 유지 시간을 검사합니다.
-    /// 임계치 초과 시 고착된 센서를 식별하고 기존 리셋 루틴을 취소 후 강제 리셋을 재실행합니다.
-    /// </summary>
-    private void CheckSensorTimeout()
-    {
-        if (activeSensorMap == null)
-        {
-            return;
-        }
-
-        float currentTime;
-        currentTime = Time.realtimeSinceStartup;
-
-        List<string> keys;
-        keys = new List<string>(activeSensorMap.Keys);
-
-        for (int i = 0; i < keys.Count; i++)
-        {
-            string key;
-            key = keys[i];
-
-            if (currentTime - activeSensorMap[key] > sensorTimeout)
-            {
-                Debug.LogWarning(string.Format("[ArduinoManager] 센서 {0} 고착 감지. ESP32 강제 재부팅 및 캘리브레이션을 요청합니다.", key));
-                
-                activeSensorMap.Clear();
-                
-                if (resetCoroutine != null)
-                {
-                    StopCoroutine(resetCoroutine);
-                }
-                resetCoroutine = StartCoroutine(InitializeESP32Routine());
-                break;
-            }
-        }
-    }
 
         private IEnumerator FindAndConnectArduino()
         {
@@ -241,7 +234,7 @@ namespace My.Scripts
                     {
                         connectedPort = task.Result;
                         Debug.Log("ESP32 successfully connected.");
-                        
+
                         StartCoroutine(InitializeESP32Routine());
                     }
                     else
@@ -256,7 +249,7 @@ namespace My.Scripts
                 Debug.LogError("ESP32 handshake failed. Please check the connection.");
             }
         }
-        
+
         /// <summary>
         /// 포트 개방 후 ESP32 고유 시작 식별자를 탐색합니다.
         /// PC 재부팅 직후 백지상태의 COM 포트를 아두이노 IDE처럼 명시적으로 초기화합니다.
@@ -265,10 +258,10 @@ namespace My.Scripts
         {
             SerialPort testPort;
             Stopwatch stopwatch;
-            string handshakeBuffer = ""; 
+            string handshakeBuffer = "";
 
             testPort = new SerialPort(portName, baudRate);
-            
+
             // 아두이노 IDE가 기본적으로 수행하는 시리얼 하위 통신 규격 강제 지정
             // 이 설정이 없으면 Windows 재부팅 직후 드라이버가 데이터를 정상적으로 해석하지 못합니다.
             testPort.DataBits = 8;
@@ -304,17 +297,18 @@ namespace My.Scripts
                 {
                     string response;
                     response = testPort.ReadExisting();
-                    
+
                     handshakeBuffer += response;
-                    
-                    Debug.Log(string.Format("[Port Scan] {0} 누적 버퍼: {1}", portName, handshakeBuffer.Replace("\n", "").Replace("\r", "")));
+
+                    Debug.Log(string.Format("[Port Scan] {0} 누적 버퍼: {1}", portName,
+                        handshakeBuffer.Replace("\n", "").Replace("\r", "")));
 
                     if (handshakeBuffer.Contains("ESP32_Start"))
                     {
                         return testPort;
                     }
                 }
-                
+
                 Thread.Sleep(10);
             }
 
@@ -331,7 +325,7 @@ namespace My.Scripts
         {
             // 포트 개방 시 발생하는 DTR/RTS 하드웨어 리셋의 초기 부팅 완료("Ready")를 
             // 소프트웨어 리셋("R") 응답으로 오인하는 문제를 막기 위해 2초간 대기합니다.
-            yield return new WaitForSeconds(2.0f);
+            yield return CoroutineData.GetWaitForSeconds(2.0f);
 
             // C# 일반 객체이므로 명시적 null 비교 수행
             if (connectedPort != null && connectedPort.IsOpen)
@@ -339,17 +333,17 @@ namespace My.Scripts
                 // 대기하는 동안 쌓인 초기 부팅 로그(ESP32_Start, 가짜 Ready 등)를 완전히 비웁니다.
                 connectedPort.DiscardInBuffer();
             }
-            
+
             receiveBuffer = "";
             isBoardReady = false;
             isCalibrationDone = false;
 
             Debug.Log("[ArduinoManager] 보드 리셋 요청 (R) 전송 시작");
             SendCommand("R");
-            
+
             float timer;
             timer = 0f;
-            
+
             while (!isBoardReady && timer < 10.0f)
             {
                 timer += Time.deltaTime;
@@ -369,7 +363,7 @@ namespace My.Scripts
 
             float calTimer;
             calTimer = 0f;
-            
+
             while (!isCalibrationDone && calTimer < 10.0f)
             {
                 calTimer += Time.deltaTime;
@@ -386,7 +380,7 @@ namespace My.Scripts
 
             Debug.Log("[ArduinoManager] ESP32 초기화 및 캘리브레이션 완료");
         }
-        
+
         public void SendCommand(string command)
         {
             if (connectedPort != null && connectedPort.IsOpen)
@@ -405,7 +399,7 @@ namespace My.Scripts
                 Debug.LogWarning("ESP32 is not connected. Command ignored: " + command);
             }
         }
-        
+
         private void OnApplicationQuit()
         {
             if (connectedPort != null && connectedPort.IsOpen)
