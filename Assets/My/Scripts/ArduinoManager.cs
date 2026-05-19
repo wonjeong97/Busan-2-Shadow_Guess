@@ -1,10 +1,13 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO.Ports;
 using System.Threading;
 using System.Threading.Tasks;
 using UnityEngine;
 using Wonjeong.Utils;
+using Debug = UnityEngine.Debug;
 
 namespace My.Scripts
 {
@@ -19,13 +22,18 @@ namespace My.Scripts
         [SerializeField] private int baudRate;
         [SerializeField] private float handshakeTimeout;
         [SerializeField] private float reconnectInterval;
+        [SerializeField] private float sensorTimeout;
 
         private SerialPort connectedPort;
         private Coroutine connectionCoroutine;
+        private Coroutine resetCoroutine;
         
         private string receiveBuffer;
         private bool isBoardReady;
         private bool isCalibrationDone;
+        
+        private Dictionary<string, float> debounceMap;
+        private Dictionary<string, float> activeSensorMap;
         
         public event Action<string> OnDataReceived;
         
@@ -41,6 +49,10 @@ namespace My.Scripts
             DontDestroyOnLoad(gameObject);
         }
 
+        /// <summary>
+        /// 아두이노 매니저 초기화 및 통신 모니터링 코루틴 시작.
+        /// 디바운스 맵 할당.
+        /// </summary>
         private void Start()
         {
             if (baudRate <= 0)
@@ -60,6 +72,9 @@ namespace My.Scripts
                 Debug.LogWarning("ReconnectInterval is invalid or not set. Fallback to 3.0f.");
                 reconnectInterval = 3.0f;
             }
+
+            debounceMap = new Dictionary<string, float>();
+            activeSensorMap = new Dictionary<string, float>();
 
             if (connectionCoroutine != null)
             {
@@ -84,54 +99,119 @@ namespace My.Scripts
             }
         }
         
-        /// <summary>
-        /// 수신 버퍼를 읽고, 줄바꿈 문자를 기준으로 보드의 상태 및 센서 입력을 파싱합니다.
-        /// </summary>
-        private void Update()
+       /// <summary>
+    /// 수신 버퍼 읽기 및 상태 파싱.
+    /// On/Off 상태를 추적하고 고착 감지 로직을 호출합니다.
+    /// </summary>
+    private void Update()
+    {
+        if (connectedPort == null || !connectedPort.IsOpen)
         {
-            if (connectedPort == null || !connectedPort.IsOpen)
-            {
-                return;
-            }
+            return;
+        }
 
-            if (connectedPort.BytesToRead > 0)
+        CheckSensorTimeout();
+
+        if (connectedPort.BytesToRead > 0)
+        {
+            receiveBuffer += connectedPort.ReadExisting();
+            int newLineIndex;
+            
+            while ((newLineIndex = receiveBuffer.IndexOf('\n')) != -1)
             {
-                receiveBuffer += connectedPort.ReadExisting();
-                int newLineIndex;
-                
-                while ((newLineIndex = receiveBuffer.IndexOf('\n')) != -1)
+                string line;
+                line = receiveBuffer.Substring(0, newLineIndex).Trim();
+                receiveBuffer = receiveBuffer.Substring(newLineIndex + 1);
+
+                if (!string.IsNullOrEmpty(line))
                 {
-                    string line;
-                    line = receiveBuffer.Substring(0, newLineIndex).Trim();
-                    receiveBuffer = receiveBuffer.Substring(newLineIndex + 1);
-
-                    if (!string.IsNullOrEmpty(line))
+                    if (line == "MPR121 not found")
                     {
-                        // 보드에서 수신되는 모든 데이터(Rebooting..., Off 등)를 로깅합니다.
-                        Debug.Log(string.Format("Arduino Received: {0}", line));
+                        Debug.LogError("[ArduinoManager] 하드웨어 에러: MPR121 터치 센서를 찾을 수 없습니다!");
+                    }
+                    else if (line == "Ready")
+                    {
+                        isBoardReady = true;
+                    }
+                    else if (line == "Sensor_Ready")
+                    {
+                        isCalibrationDone = true;
+                    }
+                    else if (line.EndsWith("On"))
+                    {
+                        string sensorId;
+                        sensorId = line.Replace("On", "").Trim();
+                        
+                        float currentTime;
+                        currentTime = Time.realtimeSinceStartup;
+                        
+                        if (activeSensorMap != null)
+                        {
+                            activeSensorMap[sensorId] = currentTime;
+                        }
+                        else
+                        {
+                            Debug.LogWarning("activeSensorMap이 null입니다. 할당 로직을 확인하세요.");
+                        }
 
-                        if (line == "MPR121 not found")
+                        if (!debounceMap.TryGetValue(sensorId, out float lastTime) || currentTime - lastTime > 0.5f)
                         {
-                            Debug.LogError("[ArduinoManager] 하드웨어 에러: MPR121 터치 센서를 찾을 수 없습니다!");
-                        }
-                        else if (line == "Ready")
-                        {
-                            isBoardReady = true;
-                        }
-                        else if (line == "Sensor_Ready")
-                        {
-                            isCalibrationDone = true;
-                        }
-                        else if (line.EndsWith("On"))
-                        {
-                            string sensorId;
-                            sensorId = line.Replace("On", "").Trim();
+                            debounceMap[sensorId] = currentTime;
                             OnDataReceived?.Invoke(sensorId);
+                        }
+                    }
+                    else if (line.EndsWith("Off"))
+                    {
+                        string sensorId;
+                        sensorId = line.Replace("Off", "").Trim();
+                        
+                        if (activeSensorMap != null && activeSensorMap.ContainsKey(sensorId))
+                        {
+                            activeSensorMap.Remove(sensorId);
                         }
                     }
                 }
             }
         }
+    }
+       
+    /// <summary>
+    /// 활성화된 센서들의 유지 시간을 검사합니다.
+    /// 임계치 초과 시 고착된 센서를 식별하고 기존 리셋 루틴을 취소 후 강제 리셋을 재실행합니다.
+    /// </summary>
+    private void CheckSensorTimeout()
+    {
+        if (activeSensorMap == null)
+        {
+            return;
+        }
+
+        float currentTime;
+        currentTime = Time.realtimeSinceStartup;
+
+        List<string> keys;
+        keys = new List<string>(activeSensorMap.Keys);
+
+        for (int i = 0; i < keys.Count; i++)
+        {
+            string key;
+            key = keys[i];
+
+            if (currentTime - activeSensorMap[key] > sensorTimeout)
+            {
+                Debug.LogWarning(string.Format("[ArduinoManager] 센서 {0} 고착 감지. ESP32 강제 재부팅 및 캘리브레이션을 요청합니다.", key));
+                
+                activeSensorMap.Clear();
+                
+                if (resetCoroutine != null)
+                {
+                    StopCoroutine(resetCoroutine);
+                }
+                resetCoroutine = StartCoroutine(InitializeESP32Routine());
+                break;
+            }
+        }
+    }
 
         private IEnumerator FindAndConnectArduino()
         {
@@ -184,7 +264,7 @@ namespace My.Scripts
         private SerialPort CheckPortAsync(string portName)
         {
             SerialPort testPort;
-            System.Diagnostics.Stopwatch stopwatch;
+            Stopwatch stopwatch;
             string handshakeBuffer = ""; 
 
             testPort = new SerialPort(portName, baudRate);
@@ -216,7 +296,7 @@ namespace My.Scripts
                 return null;
             }
 
-            stopwatch = System.Diagnostics.Stopwatch.StartNew();
+            stopwatch = Stopwatch.StartNew();
 
             while (stopwatch.Elapsed.TotalSeconds < 5.0)
             {
